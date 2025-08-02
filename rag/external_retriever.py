@@ -4,9 +4,21 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 import os
 
+from langchain_huggingface import HuggingFaceEmbeddings
+
+# Define embedding function
+# def extract_embedding(document: str, model_path="BAAI/bge-small-en-v1.5"):
+#     """Extract embedding using HF Embedding
+#        with a default model from HF if no path is specify
+#     """
+#
+#     embed_model = HuggingFaceEmbedding(model_name=model_path)
+#     embedding = embed_model.embed_query(text=document)
+#     return embedding
+
 def get_external_vector_store(urls, index_path="data/external_index"):
     if os.path.exists(index_path):
-        return FAISS.load_local(index_path, OpenAIEmbeddings())
+        return FAISS.load_local(index_path, HuggingFaceEmbeddings())
 
     # Load and embed external documents
     documents = []
@@ -21,5 +33,5 @@ def get_external_vector_store(urls, index_path="data/external_index"):
     if not documents:
         raise ValueError("No external documents loaded")
 
-    vector_store = FAISS.from_documents(documents, OpenAIEmbeddings(), index_name=index_path)
+    vector_store = FAISS.from_documents(documents, HuggingFaceEmbeddings(), index_name=index_path)
     return vector_store
