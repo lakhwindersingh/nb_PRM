@@ -1,14 +1,15 @@
-# memory/memory_manager.py
-from langchain.memory import VectorStoreRetrieverMemory
+import os
+from langchain.vectorstores import FAISS
+from langchain.embeddings import HuggingFaceEmbeddings
 
-from memory.vector_store import get_vector_store
 
+def get_vector_store():
+    embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
+    faiss_path = "faiss_index"
 
-class MemoryManager:
-    def __init__(self):
-        self.vector_store = get_vector_store()
-        self.retriever = VectorStoreRetrieverMemory(retriever=self.vector_store.as_retriever())
-
-    def save(self, context, output):
-        self.retriever.save_context({"input": context}, {"output": output})
-
+    if os.path.exists(faiss_path):
+        return FAISS.load_local(faiss_path, embeddings)
+    else:
+        vector_store = FAISS.from_texts(texts=[], embedding=embeddings)
+        vector_store.save_local(faiss_path)
+        return vector_store
