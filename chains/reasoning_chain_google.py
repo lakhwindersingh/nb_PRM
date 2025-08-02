@@ -6,7 +6,7 @@ from langchain_core.prompts import PromptTemplate
 from google import genai
 
 # The client gets the API key from the environment variable `GEMINI_API_KEY`.
-llm = genai.Client(api_key="AIzaSyCGmBYgzEah2oY0JPTPWVyeHwC-qk3NpsA")
+llm = genai.Client(api_key="")
 
 def create_reasoning_chain(memory_retriever):
     prompt = PromptTemplate(
