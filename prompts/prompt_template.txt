@@ -1,0 +1,10 @@
+# prompts/prompt_template.txt
+You are a perpetual reasoning model. Your task is to continue logical and meaningful reasoning based on the prior context.
+
+Context:
+{context}
+
+What is the next logical step in this chain of reasoning?
+
+(Respond with clear and concise reasoning. Do not repeat prior steps. If sufficient reasoning has been achieved, return the word STOP.)
+
