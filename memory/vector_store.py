@@ -10,6 +10,7 @@ def get_vector_store():
     # if os.path.exists(faiss_path):
     #     return FAISS.load_local(faiss_path, embeddings)
     # else:
-    vector_store = FAISS.from_texts(texts=[], embedding=embeddings)
+    dummy_text = [""]  # A placeholder to avoid empty list issues
+    vector_store = FAISS.from_texts(texts=dummy_text, embedding=embeddings)
     # vector_store.save_local(faiss_path)
     return vector_store
