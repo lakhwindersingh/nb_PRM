@@ -18,6 +18,10 @@ This project implements a **perpetually thinking reasoning agent** using LangGra
 - 🧮 Halting logic via output entropy/energy
 - 📓 Timestamped JSONL logs per reasoning step
 - 🧵 Streamlit UI or CLI entrypoint
+- 🔄 Iterative reasoning with context carry-over
+- 💾 Memory retrieval and storage via FAISS
+- 📊 Structured logging of each reasoning step
+- ⚙️ Configurable via CLI
 
 ---
 
@@ -66,6 +70,9 @@ python main.py --mode cli --max-steps 5 --stream False
 streamlit run main.py -- --mode streamlit
 ```
 
+### Run Reasoning Loop
+
+---
 ---
 
 ## 🧠 How It Works
@@ -94,6 +101,13 @@ Replace `energy_monitor.py` logic with:
 
 ### 📈 Live Monitoring
 - Connect `logger.py` output to Superset/Streamlit dashboard
+
+## 🧪 Future Extensions
+
+- Add Streamlit dashboard
+- Introduce multi-agent ReAct model
+- Confidence-based halting criteria
+- Memory pruning and summarization
 
 ---
 
