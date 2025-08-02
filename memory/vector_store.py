@@ -1,6 +1,8 @@
 # memory/memory_manager.py
 from langchain.memory import VectorStoreRetrieverMemory
+
 from memory.vector_store import get_vector_store
+
 
 class MemoryManager:
     def __init__(self):
