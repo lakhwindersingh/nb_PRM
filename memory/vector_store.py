@@ -7,9 +7,9 @@ def get_vector_store():
     embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
     faiss_path = "faiss_index"
 
-    if os.path.exists(faiss_path):
-        return FAISS.load_local(faiss_path, embeddings)
-    else:
-        vector_store = FAISS.from_texts(texts=[], embedding=embeddings)
-        vector_store.save_local(faiss_path)
-        return vector_store
+    # if os.path.exists(faiss_path):
+    #     return FAISS.load_local(faiss_path, embeddings)
+    # else:
+    vector_store = FAISS.from_texts(texts=[], embedding=embeddings)
+    # vector_store.save_local(faiss_path)
+    return vector_store
