@@ -13,8 +13,13 @@ def build_reasoning_graph(chain, memory_manager, logger):
     graph = StateGraph(state_schema=ReasoningState)
 
     def thinking_node(state: ReasoningState) -> ReasoningState:
-        # Get augmented context from memory
-        augmented_context = memory_manager.get_augmented_context(state.context)
+        # Retrieve relevant documents from the vector store
+        retrieved_docs = memory_manager.retriever.get_relevant_documents(state.context)
+
+        # Create augmented context by combining retrieved documents with the current context
+        augmented_context = state.context
+        for doc in retrieved_docs:
+            augmented_context += "\n\n" + doc.page_content  # Combine with retrieved documents
 
         # Run the chain with the augmented context
         output = chain.run(context=augmented_context)
@@ -29,14 +34,13 @@ def build_reasoning_graph(chain, memory_manager, logger):
         # Return the updated state
         return ReasoningState(context=output, contin=should_continue)
 
-    # Add the node
-    graph.add_node("think", thinking_node)
+        # Initialize the StateGraph with the defined schema
+        graph = StateGraph(state_schema=ReasoningState)
 
-    # Add the entry point edge from START to think node
-    graph.add_edge(START, "think")
-
-    # Add conditional edges to loop back to think or end
-    graph.add_conditional_edges(
+        # Add the node and edges
+        graph.add_node("think", thinking_node)
+        graph.add_edge(START, "think")
+        graph.add_conditional_edges(
         "think",
         lambda state: "think" if state.contin else END,
         {

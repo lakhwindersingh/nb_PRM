@@ -16,7 +16,7 @@ EXTERNAL_URLS = [
 class MemoryManager:
     def __init__(self):
         self.vector_store = get_vector_store()
-        self.retriever_memory = VectorStoreRetrieverMemory(retriever=self.vector_store.as_retriever())
+        self.retriever = VectorStoreRetrieverMemory(retriever=self.vector_store.as_retriever())
         self.external_vector_store = get_external_vector_store(EXTERNAL_URLS)
 
         self.composite_retriever = CompositeRetriever(
@@ -30,6 +30,9 @@ class MemoryManager:
     def save(self, context, output):
         self.retriever_memory.save_context({"input": context}, {"output": output})
 
+    @property
+    def retriever_memory(self):
+        return self.retriever
 
     # def save(self, context, output):
     #     self.retriever.save_context({"input": context}, {"output": output})
