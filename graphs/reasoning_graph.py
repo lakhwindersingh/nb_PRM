@@ -71,7 +71,7 @@ def build_reasoning_graph(chain, memory_manager, logger):
 
     graph.add_conditional_edges(
         reasoning_node_name,
-        lambda state: reasoning_node_name if state.loop else "END"
+        lambda state: reasoning_node_name if state.loop else END
     )
 
     return graph.compile()
