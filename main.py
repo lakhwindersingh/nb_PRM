@@ -17,22 +17,26 @@ args = parser.parse_args()
 # Setup
 memory = MemoryManager()
 logger = StepLogger("data/logs.jsonl")
-chain = create_reasoning_chain(memory.retriever)
+chain = create_reasoning_chain(memory.retriever_memory)
 reasoning_graph = build_reasoning_graph(chain, memory, logger)
-
-print("\n[ Perpetual Reasoning Model Started ]\n")
-
-# Starting context
-initial_context = "Why do humans seek meaning in life?"
-context = args.context
 
 # Run perpetual thinking loop
 print("\n[ Perpetual Reasoning Model Started ]\n")
-reasoning_graph.invoke({"context": initial_context})
+
+# Starting context
+initial_state = {
+    "context": "Why do humans seek meaning in life?",
+    "loop": True,
+    "step_count": 0
+}
+context = args.context
+
+result = reasoning_graph.invoke(initial_state)
+print(result)  # Should return a valid state with updated step_count
 
 
 # for _ in range(args.steps):
-#     result = reasoning_graph.invoke({"context": context})
+#     result = reasoning_graph.invoke({"context": initial_context, "contin": True, "step_count": 0 })
 #     context = result.get("context")
 #     if context.strip().upper() == "STOP":
 #         print("\n[ Reasoning completed. STOP received. ]")
