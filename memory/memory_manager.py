@@ -1,9 +1,5 @@
 # memory/memory_manager.py
 from langchain.memory import VectorStoreRetrieverMemory
-
-from memory.vector_store import get_vector_store
-# memory/memory_manager.py
-from langchain.memory import VectorStoreRetrieverMemory
 from memory.vector_store import get_vector_store
 from rag.external_retriever import get_external_vector_store
 from rag.composite_memory import CompositeRetriever
@@ -34,9 +30,6 @@ class MemoryManager:
     def retriever_memory(self):
         return self.retriever
 
-    # def save(self, context, output):
-    #     self.retriever.save_context({"input": context}, {"output": output})
-    #
 
 
 
