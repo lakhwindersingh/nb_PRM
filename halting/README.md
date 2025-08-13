@@ -1,0 +1,8 @@
+- Multi-factor Analysis: Considers semantic complexity, information density (entropy), novelty, coherence, and length efficiency
+- Entropy Calculation: Uses information-theoretic entropy to measure information density
+- Novelty Detection: Tracks previous outputs and penalizes repetition using Jaccard similarity
+- Coherence Scoring: Basic structural analysis for output quality
+- Length Efficiency: Optimal length targeting with diminishing returns for very long outputs
+- Memory Management: Prevents memory bloat by limiting stored outputs
+- Debugging Support: Added get_energy_breakdown() for analysis
+- The function returns a score between 0 and 1, where higher scores indicate better energy efficiency and reasoning quality, making it suitable for determining when to halt reasoning processes
