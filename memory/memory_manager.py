@@ -1,17 +1,15 @@
+# memory/memory_manager.py
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
+from enum import Enum
 
 from langchain.memory import VectorStoreRetrieverMemory
 from langchain.schema import Document
 
-from memory.memory_manager import EnhancedMemoryManager as BaseMemoryManager
 from memory.vector_store import get_vector_store
-from rag.composite_memory import CompositeRetriever  # Use existing class name
-from rag.external_retriever import get_external_vector_store  # Use existing function
-from prompts.prompt_enhancer import PromptEnhancer, auto_enhance_prompt, get_template_prompt
-from prompts.prompt_enhancer import ResponseFormat, DetailLevel, PromptContext
-import logging
+from rag.composite_memory import CompositeRetriever
+from rag.external_retriever import get_external_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -24,128 +22,286 @@ DEFAULT_EXTERNAL_URLS = [
     "https://en.wikipedia.org/wiki/Cognitive_science"
 ]
 
-class PromptAwareMemoryManager(BaseMemoryManager):
-    """Enhanced memory manager with advanced prompt enhancement capabilities"""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.prompt_enhancer = PromptEnhancer()
-        self.enhancement_stats = {
-            'total_enhancements': 0,
-            'auto_enhancements': 0,
-            'template_enhancements': 0,
-            'manual_enhancements': 0
+class ResponseStyle(Enum):
+    """Response enhancement styles"""
+    DETAILED = "detailed"
+    ANALYTICAL = "analytical"
+    HOWTO = "howto"
+    COMPARISON = "comparison"
+    CREATIVE = "creative"
+    RESEARCH = "research"
+    CODING = "coding"
+    EXPLANATION = "explanation"
+    AUTO = "auto"
+
+
+class PromptEnhancer:
+    """Built-in prompt enhancement system"""
+
+    @staticmethod
+    def enhance_prompt(prompt: str, style: ResponseStyle = ResponseStyle.DETAILED) -> str:
+        """Enhance a prompt based on the specified style"""
+
+        if style == ResponseStyle.AUTO:
+            style = PromptEnhancer._detect_style(prompt)
+
+        enhancers = {
+            ResponseStyle.DETAILED: PromptEnhancer._enhance_detailed,
+            ResponseStyle.ANALYTICAL: PromptEnhancer._enhance_analytical,
+            ResponseStyle.HOWTO: PromptEnhancer._enhance_howto,
+            ResponseStyle.COMPARISON: PromptEnhancer._enhance_comparison,
+            ResponseStyle.CREATIVE: PromptEnhancer._enhance_creative,
+            ResponseStyle.RESEARCH: PromptEnhancer._enhance_research,
+            ResponseStyle.CODING: PromptEnhancer._enhance_coding,
+            ResponseStyle.EXPLANATION: PromptEnhancer._enhance_explanation
         }
 
-    def get_enhanced_context_with_prompt(self,
-                                         query: str,
-                                         enhancement_type: str = "auto",
-                                         response_format: ResponseFormat = ResponseFormat.DETAILED,
-                                         detail_level: DetailLevel = DetailLevel.COMPREHENSIVE,
-                                         context_info: dict = None,
-                                         **kwargs) -> tuple:
-        """
-        Get both enhanced prompt and augmented context
+        enhancer = enhancers.get(style, enhancers[ResponseStyle.DETAILED])
+        return enhancer(prompt)
 
-        Returns:
-            Tuple of (enhanced_prompt, augmented_context)
-        """
-        try:
-            # Enhance the prompt
-            if enhancement_type == "auto":
-                enhanced_prompt = auto_enhance_prompt(query, **kwargs)
-                self.enhancement_stats['auto_enhancements'] += 1
-            elif enhancement_type == "template":
-                template_type = kwargs.get('template_type')
-                enhanced_prompt = get_template_prompt(query, template_type)
-                self.enhancement_stats['template_enhancements'] += 1
-            elif enhancement_type == "manual":
-                prompt_context = PromptContext(**context_info) if context_info else None
-                enhanced_prompt = self.prompt_enhancer.enhance_prompt(
-                    query, response_format, detail_level, prompt_context,
-                    kwargs.get('custom_instructions')
-                )
-                self.enhancement_stats['manual_enhancements'] += 1
-            else:
-                enhanced_prompt = query
+    @staticmethod
+    def _detect_style(prompt: str) -> ResponseStyle:
+        """Auto-detect the best enhancement style for a prompt"""
+        prompt_lower = prompt.lower()
 
-            self.enhancement_stats['total_enhancements'] += 1
+        if any(word in prompt_lower for word in ['how to', 'steps', 'process', 'guide', 'tutorial']):
+            return ResponseStyle.HOWTO
+        elif any(word in prompt_lower for word in ['compare', 'vs', 'versus', 'difference', 'better']):
+            return ResponseStyle.COMPARISON
+        elif any(word in prompt_lower for word in ['analyze', 'analysis', 'evaluate', 'assess', 'examine']):
+            return ResponseStyle.ANALYTICAL
+        elif any(word in prompt_lower for word in ['create', 'design', 'write', 'compose', 'generate']):
+            return ResponseStyle.CREATIVE
+        elif any(word in prompt_lower for word in ['research', 'study', 'investigate', 'find out', 'sources']):
+            return ResponseStyle.RESEARCH
+        elif any(word in prompt_lower for word in ['code', 'program', 'implement', 'algorithm', 'function']):
+            return ResponseStyle.CODING
+        elif any(word in prompt_lower for word in ['explain', 'what is', 'definition', 'meaning', 'understand']):
+            return ResponseStyle.EXPLANATION
+        else:
+            return ResponseStyle.DETAILED
 
-            # Get augmented context using the original query
-            # (we search with original query but respond with enhanced prompt)
-            augmented_context = self.get_augmented_context(
-                query,
-                include_conversation_history=kwargs.get('include_history', True),
-                context_length_limit=kwargs.get('context_limit', 4000),
-                k=kwargs.get('retrieval_k', self.retrieval_k)
-            )
+    @staticmethod
+    def _enhance_detailed(prompt: str) -> str:
+        return f"""
+You are a knowledgeable expert providing comprehensive information. Structure your response as follows:
 
-            logger.info(f"Enhanced prompt and retrieved context for query: '{query[:50]}...'")
+**Query:** {prompt}
 
-            return enhanced_prompt, augmented_context
+**Response Requirements:**
+1. **Executive Summary** - Key points and main conclusions upfront
+2. **Detailed Analysis** - Thorough exploration with multiple perspectives
+3. **Supporting Evidence** - Facts, data, examples, and sources
+4. **Practical Applications** - Real-world relevance and use cases
+5. **Implications & Context** - Broader significance and connections
+6. **Conclusion** - Summary of key takeaways
 
-        except Exception as e:
-            logger.error(f"Failed to enhance prompt and get context: {e}")
-            return query, self.get_augmented_context(query)
+**Quality Standards:**
+- Provide comprehensive coverage without unnecessary repetition
+- Use clear headings and logical structure
+- Include specific examples and concrete details
+- Maintain accuracy and cite sources when relevant
+- Address multiple aspects and perspectives
+- End with actionable insights or next steps
 
-    def create_full_prompt(self,
-                           user_query: str,
-                           system_context: str = None,
-                           enhancement_config: dict = None) -> str:
-        """
-        Create a complete prompt with system context, enhanced query, and retrieved context
-        """
-        config = enhancement_config or {}
+Make your response thorough, well-organized, and valuable for someone seeking deep understanding of this topic.
+"""
 
-        # Get enhanced prompt and context
-        enhanced_prompt, augmented_context = self.get_enhanced_context_with_prompt(
-            user_query, **config
-        )
+    @staticmethod
+    def _enhance_analytical(prompt: str) -> str:
+        return f"""
+You are an expert analyst conducting a thorough examination. Provide a structured analytical response:
 
-        # Build complete prompt
-        prompt_parts = []
+**Analysis Subject:** {prompt}
 
-        # System context
-        if system_context:
-            prompt_parts.append(f"SYSTEM CONTEXT:\n{system_context}")
+**Analytical Framework:**
+1. **Problem Definition** - Clearly define what is being analyzed
+2. **Methodology** - Explain your analytical approach and criteria
+3. **Data & Evidence** - Present relevant information and sources
+4. **Critical Analysis** - Systematic examination with reasoning
+5. **Key Findings** - Main discoveries and insights
+6. **Evaluation** - Strengths, weaknesses, opportunities, threats
+7. **Conclusions & Recommendations** - Evidence-based outcomes
 
-        # Retrieved context
-        if augmented_context:
-            prompt_parts.append(f"RETRIEVED CONTEXT:\n{augmented_context}")
+**Analysis Standards:**
+- Use logical reasoning and evidence-based conclusions
+- Consider multiple perspectives and potential biases
+- Identify patterns, trends, and relationships
+- Distinguish between facts and interpretations
+- Provide balanced evaluation of pros and cons
+- Support all claims with specific evidence
 
-        # Enhanced user prompt
-        prompt_parts.append(f"USER REQUEST:\n{enhanced_prompt}")
+Deliver an objective, thorough analysis that demonstrates critical thinking and provides valuable insights.
+"""
 
-        # Final instructions
-        prompt_parts.append("""
-RESPONSE INSTRUCTIONS:
-- Use the retrieved context to inform your response but don't limit yourself to it
-- Follow the structured format specified in the user request
-- Ensure your response is comprehensive and well-organized
-- Cite sources from the context when relevant
-- If the context doesn't fully address the query, acknowledge this and provide the best response possible
-""")
+    @staticmethod
+    def _enhance_howto(prompt: str) -> str:
+        return f"""
+You are an expert instructor creating a comprehensive guide. Provide clear, actionable instructions:
 
-        full_prompt = "\n\n" + "=" * 50 + "\n\n".join(prompt_parts)
+**Instruction Request:** {prompt}
 
-        logger.info(f"Created full prompt of {len(full_prompt)} characters")
-        return full_prompt
+**Guide Structure:**
+1. **Overview** - What will be accomplished and expected outcomes
+2. **Prerequisites** - Required knowledge, skills, tools, or materials
+3. **Preparation** - Setup steps and initial requirements
+4. **Step-by-Step Instructions** - Detailed, numbered process
+5. **Tips & Best Practices** - Professional insights and optimizations
+6. **Common Pitfalls** - What to avoid and troubleshooting
+7. **Verification** - How to confirm success and quality checks
 
-    def get_enhancement_stats(self):
-        """Get prompt enhancement statistics"""
-        return {
-            **super().get_memory_stats(),
-            'prompt_enhancement_stats': self.enhancement_stats
-        }
+**Instruction Quality:**
+- Make each step clear, specific, and actionable
+- Use simple language and avoid jargon where possible
+- Include time estimates and difficulty levels
+- Provide alternatives for different situations
+- Add safety warnings or important notes
+- Include examples or visual descriptions when helpful
+
+Create instructions that someone can follow successfully, even without prior experience.
+"""
+
+    @staticmethod
+    def _enhance_comparison(prompt: str) -> str:
+        return f"""
+You are a comparison expert providing comprehensive evaluation. Structure your analysis:
+
+**Comparison Topic:** {prompt}
+
+**Comparison Framework:**
+1. **Comparison Overview** - What's being compared and why
+2. **Evaluation Criteria** - Key factors and metrics for comparison
+3. **Option Profiles** - Detailed description of each alternative
+4. **Feature Comparison** - Side-by-side analysis of key attributes
+5. **Strengths & Weaknesses** - Pros and cons for each option
+6. **Use Case Analysis** - Best scenarios for each choice
+7. **Final Verdict** - Recommendations with clear reasoning
+
+**Comparison Standards:**
+- Use consistent criteria across all options
+- Provide objective, fact-based analysis
+- Include both quantitative and qualitative factors
+- Consider different user needs and contexts
+- Present information in easy-to-compare formats
+- Give clear rationale for recommendations
+
+Deliver a balanced comparison that helps readers make informed decisions based on their specific needs.
+"""
+
+    @staticmethod
+    def _enhance_creative(prompt: str) -> str:
+        return f"""
+You are a creative expert and innovative thinker. Approach this with imagination and originality:
+
+**Creative Challenge:** {prompt}
+
+**Creative Structure:**
+1. **Creative Vision** - Innovative concept and inspiration
+2. **Conceptual Framework** - Underlying ideas and themes
+3. **Creative Development** - Detailed exploration of possibilities
+4. **Multiple Approaches** - Different creative directions and styles
+5. **Concrete Examples** - Specific illustrations and demonstrations
+6. **Implementation Ideas** - How to bring concepts to life
+7. **Variations & Extensions** - Additional creative possibilities
+
+**Creative Standards:**
+- Think outside conventional boundaries
+- Generate original and innovative ideas
+- Provide rich, detailed creative content
+- Include multiple creative alternatives
+- Balance creativity with practicality
+- Use vivid descriptions and compelling examples
+
+Be imaginative, original, and inspiring while providing practical guidance for implementation.
+"""
+
+    @staticmethod
+    def _enhance_research(prompt: str) -> str:
+        return f"""
+You are a research expert providing comprehensive investigation results. Structure as research output:
+
+**Research Question:** {prompt}
+
+**Research Report Structure:**
+1. **Research Objective** - What question is being investigated
+2. **Background Context** - Relevant foundational information
+3. **Methodology** - Research approach and information sources
+4. **Key Findings** - Main discoveries and data points
+5. **Supporting Evidence** - Sources, studies, and documentation
+6. **Analysis & Interpretation** - What the findings mean
+7. **Research Implications** - Significance and applications
+
+**Research Standards:**
+- Base conclusions on credible sources and evidence
+- Distinguish between established facts and emerging theories
+- Acknowledge limitations and areas of uncertainty
+- Include recent developments and current state of knowledge
+- Reference authoritative sources and studies
+- Maintain objectivity and avoid unsupported claims
+
+Provide research-quality information that would be valuable for academic or professional purposes.
+"""
+
+    @staticmethod
+    def _enhance_coding(prompt: str) -> str:
+        return f"""
+You are an expert software engineer and code architect. Provide comprehensive coding guidance:
+
+**Programming Request:** {prompt}
+
+**Development Structure:**
+1. **Problem Analysis** - Break down requirements and constraints
+2. **Solution Design** - Architecture, approach, and technology choices
+3. **Implementation** - Complete, working code with clear comments
+4. **Code Walkthrough** - Explanation of key logic and components
+5. **Testing & Validation** - Test cases and quality assurance
+6. **Optimization** - Performance improvements and best practices
+7. **Documentation** - Usage examples and maintenance notes
+
+**Coding Standards:**
+- Write clean, readable, maintainable code
+- Follow language-specific best practices and conventions
+- Include comprehensive error handling
+- Add meaningful comments and documentation
+- Provide working examples and test cases
+- Consider scalability and performance implications
+- Suggest improvements and alternative approaches
+
+Deliver production-quality code with thorough explanation and professional development practices.
+"""
+
+    @staticmethod
+    def _enhance_explanation(prompt: str) -> str:
+        return f"""
+You are an expert educator providing clear, comprehensive explanations. Structure your teaching:
+
+**Topic to Explain:** {prompt}
+
+**Educational Structure:**
+1. **Introduction** - Hook and overview of what will be learned
+2. **Key Concepts** - Essential definitions and foundational ideas
+3. **Detailed Explanation** - Step-by-step breakdown of the topic
+4. **Examples & Illustrations** - Concrete demonstrations and analogies
+5. **Common Misconceptions** - What people often get wrong and why
+6. **Practical Applications** - Real-world uses and relevance
+7. **Summary & Next Steps** - Key takeaways and further learning
+
+**Teaching Standards:**
+- Start with basics and build complexity gradually
+- Use clear, jargon-free language with definitions
+- Include multiple examples and analogies
+- Address different learning styles and perspectives
+- Anticipate and answer common questions
+- Connect to prior knowledge and real-world experiences
+
+Create an explanation that would help someone truly understand the topic, not just memorize facts.
+"""
 
 
 class EnhancedMemoryManager:
     """
-    Enhanced memory manager that provides:
-    1. Persistent conversation memory
-    2. Multi-source knowledge retrieval (internal, external, Wikipedia)
-    3. Context management and optimization
-    4. Memory statistics and health monitoring
+    Enhanced memory manager with built-in prompt enhancement capabilities
     """
 
     def __init__(self,
@@ -170,7 +326,11 @@ class EnhancedMemoryManager:
             'successful_saves': 0,
             'failed_saves': 0,
             'last_retrieval': None,
-            'last_save': None
+            'last_save': None,
+            'enhancement_stats': {
+                'total_enhancements': 0,
+                'by_style': {}
+            }
         }
 
         logger.info("Enhanced Memory Manager initialized successfully")
@@ -213,27 +373,41 @@ class EnhancedMemoryManager:
             # Fallback to internal retriever only
             self.composite_retriever = None
 
-    def get_augmented_context(self,
-                              query: str,
-                              include_conversation_history: bool = True,
-                              context_length_limit: int = 4000,
-                              k: int = None) -> str:
+    def get_enhanced_context(self,
+                             query: str,
+                             enhancement_style: ResponseStyle = ResponseStyle.AUTO,
+                             include_conversation_history: bool = True,
+                             context_length_limit: int = 4000,
+                             k: int = None,
+                             return_components: bool = False) -> str:
         """
-        Get augmented context combining multiple knowledge sources
-        
+        Get enhanced prompt with augmented context from multiple knowledge sources
+
         Args:
-            query: The query to search for
-            include_conversation_history: Whether to include recent conversation history
-            context_length_limit: Maximum characters in returned context
-            k: Number of documents to retrieve (uses self.retrieval_k if None)
-        
+            query: The user's query
+            enhancement_style: Style of prompt enhancement
+            include_conversation_history: Whether to include conversation history
+            context_length_limit: Maximum context length
+            k: Number of documents to retrieve
+            return_components: If True, returns tuple of (enhanced_prompt, context, full_prompt)
+
         Returns:
-            Combined context string
+            Enhanced prompt with context, or tuple if return_components=True
         """
         try:
             self.stats['total_retrievals'] += 1
             self.stats['last_retrieval'] = datetime.now().isoformat()
 
+            # Enhance the prompt
+            enhanced_prompt = PromptEnhancer.enhance_prompt(query, enhancement_style)
+
+            # Track enhancement stats
+            self.stats['enhancement_stats']['total_enhancements'] += 1
+            style_name = enhancement_style.value if enhancement_style != ResponseStyle.AUTO else 'auto_detected'
+            self.stats['enhancement_stats']['by_style'][style_name] = \
+                self.stats['enhancement_stats']['by_style'].get(style_name, 0) + 1
+
+            # Get augmented context
             k = k or self.retrieval_k
             context_parts = []
 
@@ -259,26 +433,64 @@ class EnhancedMemoryManager:
                         context_parts.append("=== KNOWLEDGE BASE (FALLBACK) ===")
                         context_parts.append(fallback_context)
 
-            # Combine and limit context length
-            full_context = "\n\n".join(context_parts)
+            # Combine contexts
+            retrieved_context = "\n\n".join(context_parts)
 
-            if len(full_context) > context_length_limit:
-                # Truncate while preserving structure
-                truncated_context = full_context[:context_length_limit]
-                # Try to cut at a section boundary
-                last_section = truncated_context.rfind("===")
-                if last_section > context_length_limit * 0.7:  # If we can preserve most content
-                    truncated_context = truncated_context[:last_section]
+            # Create full prompt
+            full_prompt = self._create_full_prompt(enhanced_prompt, retrieved_context, context_length_limit)
 
-                full_context = truncated_context + "\n\n[... context truncated ...]"
+            logger.info(f"Enhanced prompt and retrieved context for query: '{query[:50]}...'")
 
-            logger.info(f"Retrieved augmented context for query: '{query[:50]}...'")
-            return full_context
+            if return_components:
+                return enhanced_prompt, retrieved_context, full_prompt
+            else:
+                return full_prompt
 
         except Exception as e:
-            logger.error(f"Failed to get augmented context: {e}")
-            # Fallback to basic retrieval
-            return self._get_fallback_context(query, k=k or 3)
+            logger.error(f"Failed to get enhanced context: {e}")
+            # Fallback
+            if return_components:
+                return query, "", query
+            else:
+                return query
+
+    def _create_full_prompt(self, enhanced_prompt: str, context: str, length_limit: int) -> str:
+        """Create the complete prompt combining enhanced prompt with context"""
+
+        prompt_parts = []
+
+        # Add context if available
+        if context and context.strip():
+            prompt_parts.append(f"CONTEXT INFORMATION:\n{context}")
+
+        # Add enhanced prompt
+        prompt_parts.append(f"REQUEST:\n{enhanced_prompt}")
+
+        # Add final instructions
+        prompt_parts.append("""
+RESPONSE GUIDELINES:
+- Use the context information to inform your response when relevant
+- Follow the structured format specified in the request
+- Provide comprehensive, well-organized answers
+- Include examples and concrete details where helpful
+- If context is insufficient for complete answers, acknowledge this
+- Maintain accuracy and cite context sources when making specific claims
+""")
+
+        # Combine and check length
+        full_prompt = "\n\n".join(prompt_parts)
+
+        # Truncate if necessary while preserving structure
+        if len(full_prompt) > length_limit:
+            # Try to preserve the enhanced prompt and truncate context
+            context_limit = length_limit - len(enhanced_prompt) - 500  # Leave room for instructions
+            if context_limit > 0 and context:
+                truncated_context = context[:context_limit] + "\n\n[... context truncated ...]"
+                full_prompt = self._create_full_prompt(enhanced_prompt, truncated_context, length_limit)
+            else:
+                full_prompt = full_prompt[:length_limit] + "\n\n[... prompt truncated ...]"
+
+        return full_prompt
 
     def _get_conversation_context(self, query: str) -> str:
         """Get relevant conversation history"""
@@ -338,17 +550,71 @@ class EnhancedMemoryManager:
             logger.error(f"Fallback context retrieval failed: {e}")
             return "Context retrieval unavailable."
 
+    # Convenience methods for different enhancement styles
+    def get_detailed_context(self, query: str, **kwargs):
+        """Get detailed, comprehensive response context"""
+        return self.get_enhanced_context(query, ResponseStyle.DETAILED, **kwargs)
+
+    def get_analytical_context(self, query: str, **kwargs):
+        """Get analytical response context"""
+        return self.get_enhanced_context(query, ResponseStyle.ANALYTICAL, **kwargs)
+
+    def get_howto_context(self, query: str, **kwargs):
+        """Get how-to/instructional response context"""
+        return self.get_enhanced_context(query, ResponseStyle.HOWTO, **kwargs)
+
+    def get_comparison_context(self, query: str, **kwargs):
+        """Get comparison response context"""
+        return self.get_enhanced_context(query, ResponseStyle.COMPARISON, **kwargs)
+
+    def get_coding_context(self, query: str, **kwargs):
+        """Get coding/programming response context"""
+        return self.get_enhanced_context(query, ResponseStyle.CODING, **kwargs)
+
+    def get_creative_context(self, query: str, **kwargs):
+        """Get creative response context"""
+        return self.get_enhanced_context(query, ResponseStyle.CREATIVE, **kwargs)
+
+    def get_research_context(self, query: str, **kwargs):
+        """Get research response context"""
+        return self.get_enhanced_context(query, ResponseStyle.RESEARCH, **kwargs)
+
+    def get_explanation_context(self, query: str, **kwargs):
+        """Get explanation response context"""
+        return self.get_enhanced_context(query, ResponseStyle.EXPLANATION, **kwargs)
+
+    # Legacy compatibility methods
+    def get_augmented_context(self, query: str, **kwargs) -> str:
+        """Legacy method - returns basic augmented context without enhancement"""
+        try:
+            context_parts = []
+
+            # Get knowledge base context
+            if self.composite_retriever:
+                try:
+                    knowledge_context = self.composite_retriever.get_combined_context(
+                        query, k=kwargs.get('k', self.retrieval_k)
+                    )
+                    if knowledge_context:
+                        context_parts.append(knowledge_context)
+                except Exception as e:
+                    logger.warning(f"Composite retriever failed: {e}")
+                    fallback_context = self._get_fallback_context(query, k=kwargs.get('k', 3))
+                    if fallback_context:
+                        context_parts.append(fallback_context)
+
+            return "\n\n".join(context_parts)
+
+        except Exception as e:
+            logger.error(f"Failed to get augmented context: {e}")
+            return "Context retrieval failed."
+
     def save_interaction(self,
                          user_input: str,
                          assistant_output: str,
                          metadata: Optional[Dict[str, Any]] = None):
         """
         Save interaction to both retriever memory and conversation history
-        
-        Args:
-            user_input: User's input/query
-            assistant_output: Assistant's response
-            metadata: Optional metadata about the interaction
         """
         try:
             # Save to retriever memory for semantic search
@@ -379,6 +645,10 @@ class EnhancedMemoryManager:
         except Exception as e:
             logger.error(f"Failed to save interaction: {e}")
             self.stats['failed_saves'] += 1
+
+    def save(self, context: str, output: str):
+        """Legacy save method for backward compatibility"""
+        self.save_interaction(context, output)
 
     def add_knowledge_document(self, content: str, metadata: Optional[Dict[str, Any]] = None):
         """Add a new document to the internal knowledge base"""
@@ -420,194 +690,126 @@ class EnhancedMemoryManager:
         self.conversation_history.clear()
         logger.info("Conversation history cleared")
 
-    def health_check(self) -> Dict[str, Any]:
-        """Perform health check on memory system components"""
-        health = {
-            'overall_status': 'healthy',
-            'components': {},
-            'issues': []
-        }
-
-        try:
-            # Check internal vector store
-            try:
-                test_docs = self.vector_store.similarity_search("test", k=1)
-                health['components']['internal_vector_store'] = 'healthy'
-            except Exception as e:
-                health['components']['internal_vector_store'] = 'unhealthy'
-                health['issues'].append(f"Internal vector store: {str(e)}")
-
-            # Check retriever memory
-            try:
-                test_memory = self.retriever_memory.load_memory_variables({"test": "test"})
-                health['components']['retriever_memory'] = 'healthy'
-            except Exception as e:
-                health['components']['retriever_memory'] = 'unhealthy'
-                health['issues'].append(f"Retriever memory: {str(e)}")
-
-            # Check composite retriever
-            if self.composite_retriever:
-                try:
-                    test_context = self.composite_retriever.get_combined_context("test", k=1)
-                    health['components']['composite_retriever'] = 'healthy'
-                except Exception as e:
-                    health['components']['composite_retriever'] = 'unhealthy'
-                    health['issues'].append(f"Composite retriever: {str(e)}")
-            else:
-                health['components']['composite_retriever'] = 'not_available'
-
-            # Overall status
-            if health['issues']:
-                health['overall_status'] = 'degraded' if len(health['issues']) < 2 else 'unhealthy'
-
-            return health
-
-        except Exception as e:
-            logger.error(f"Health check failed: {e}")
-            return {
-                'overall_status': 'error',
-                'error': str(e)
-            }
+    @property
+    def retriever(self):
+        """Legacy property for backward compatibility"""
+        return self.retriever_memory
 
 
-# Original MemoryManager class for backward compatibility
+# Original MemoryManager class for full backward compatibility
 class MemoryManager:
     """Original MemoryManager class with enhanced functionality"""
 
     def __init__(self, external_urls: Optional[List[str]] = None):
-        # Use the existing pattern from the original code
-        self.vector_store = get_vector_store()
-        self.retriever = VectorStoreRetrieverMemory(retriever=self.vector_store.as_retriever())
+        # Initialize enhanced manager internally
+        self.enhanced_manager = EnhancedMemoryManager(external_urls)
 
-        # Setup external vector store
-        urls = external_urls or DEFAULT_EXTERNAL_URLS
-        try:
-            self.external_vector_store = get_external_vector_store(urls)
-        except Exception as e:
-            logger.warning(f"Failed to initialize external vector store: {e}")
-            self.external_vector_store = None
+        # Expose key attributes for compatibility
+        self.vector_store = self.enhanced_manager.vector_store
+        self.retriever_memory = self.enhanced_manager.retriever_memory
+        self.external_vector_store = None
+        self.composite_retriever = self.enhanced_manager.composite_retriever
 
-        # Setup composite retriever
-        try:
-            self.composite_retriever = CompositeRetriever(
-                internal_retriever=self.vector_store.as_retriever(),
-                external_vector_store=self.external_vector_store
-            )
-        except Exception as e:
-            logger.error(f"Failed to initialize composite retriever: {e}")
-            self.composite_retriever = None
-
-        # Enhanced functionality
-        self.conversation_history = []
-        self.stats = {'total_retrievals': 0, 'successful_saves': 0, 'failed_saves': 0}
+        # Try to get external vector store reference
+        if external_urls:
+            try:
+                self.external_vector_store = get_external_vector_store(external_urls)
+            except:
+                pass
 
     def get_augmented_context(self, query, k=4):
         """Get augmented context using composite retriever"""
-        try:
-            self.stats['total_retrievals'] += 1
-
-            if self.composite_retriever:
-                context = self.composite_retriever.get_combined_context(query, k=k)
-                logger.info(f"Retrieved augmented context for query: '{query[:50]}...'")
-                return context
-            else:
-                # Fallback to basic vector store
-                docs = self.vector_store.similarity_search(query, k=k)
-                context = "\n\n".join(doc.page_content for doc in docs)
-                logger.warning("Used fallback context retrieval")
-                return context
-
-        except Exception as e:
-            logger.error(f"Failed to get augmented context: {e}")
-            return "Context retrieval failed."
+        return self.enhanced_manager.get_augmented_context(query, k=k)
 
     def save(self, context, output):
         """Save interaction to memory"""
-        try:
-            self.retriever.save_context({"input": context}, {"output": output})
-
-            # Also save to conversation history
-            self.conversation_history.append({
-                'timestamp': datetime.now().isoformat(),
-                'input': context,
-                'output': output
-            })
-
-            # Keep history manageable
-            if len(self.conversation_history) > 50:
-                self.conversation_history = self.conversation_history[-25:]
-
-            self.stats['successful_saves'] += 1
-            logger.info("Interaction saved successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to save interaction: {e}")
-            self.stats['failed_saves'] += 1
+        self.enhanced_manager.save(context, output)
 
     @property
-    def retriever_memory(self):
+    def retriever(self):
         """Property for backward compatibility"""
-        return self.retriever
+        return self.retriever_memory
 
     def get_stats(self):
         """Get basic statistics"""
-        return {
-            **self.stats,
-            'conversation_history_length': len(self.conversation_history),
-            'composite_retriever_available': self.composite_retriever is not None,
-            'external_vector_store_available': self.external_vector_store is not None
-        }
+        return self.enhanced_manager.get_memory_stats()
+
+    # New enhanced methods available in legacy class
+    def get_enhanced_context(self, query: str, style: str = "auto", **kwargs):
+        """Get enhanced context with prompt enhancement"""
+        style_enum = ResponseStyle(style) if isinstance(style, str) else style
+        return self.enhanced_manager.get_enhanced_context(query, style_enum, **kwargs)
+
+    def get_detailed_context(self, query: str, **kwargs):
+        """Get detailed response context"""
+        return self.enhanced_manager.get_detailed_context(query, **kwargs)
+
+    def get_coding_context(self, query: str, **kwargs):
+        """Get coding response context"""
+        return self.enhanced_manager.get_coding_context(query, **kwargs)
 
 
-# Factory function for easy setup
-def create_memory_manager(enhanced: bool = False,
-                          external_urls: Optional[List[str]] = None,
-                          **kwargs) -> MemoryManager:
-    """
-    Create a memory manager with optional enhancement
-    
-    Args:
-        enhanced: Whether to use EnhancedMemoryManager
-        external_urls: List of URLs for external knowledge
-        **kwargs: Additional arguments for EnhancedMemoryManager
-    
-    Returns:
-        MemoryManager or EnhancedMemoryManager instance
-    """
+# Factory functions
+def create_memory_manager(enhanced: bool = True, **kwargs):
+    """Create a memory manager"""
     if enhanced:
-        return EnhancedMemoryManager(external_urls=external_urls, **kwargs)
+        return EnhancedMemoryManager(**kwargs)
     else:
-        return MemoryManager(external_urls=external_urls)
+        return MemoryManager(**kwargs)
+
+
+def create_enhanced_memory_manager(**kwargs):
+    """Create enhanced memory manager"""
+    return EnhancedMemoryManager(**kwargs)
 
 
 # Usage example
 if __name__ == "__main__":
-    # Test with original interface
-    print("Testing original MemoryManager interface...")
+    # Test with enhanced interface
+    print("Testing Enhanced Memory Manager...")
 
     try:
-        memory_manager = MemoryManager()
+        memory_manager = EnhancedMemoryManager()
 
-        # Test retrieval
-        query = "What is artificial intelligence?"
-        context = memory_manager.get_augmented_context(query)
+        # Test different enhancement styles
+        queries = [
+            ("What is machine learning?", ResponseStyle.EXPLANATION),
+            ("How to implement a binary search?", ResponseStyle.CODING),
+            ("Compare Python and Java", ResponseStyle.COMPARISON),
+            ("Analyze the impact of AI on society", ResponseStyle.ANALYTICAL)
+        ]
 
-        print("Augmented Context:")
-        print("=" * 50)
-        print(context[:500] + "..." if len(context) > 500 else context)
+        for query, style in queries:
+            print(f"\n=== {style.value.upper()} ENHANCEMENT ===")
+            print(f"Query: {query}")
 
-        # Test saving
-        response = "AI is the simulation of human intelligence in machines."
-        memory_manager.save(query, response)
+            enhanced_prompt, context, full_prompt = memory_manager.get_enhanced_context(
+                query, style, return_components=True
+            )
 
-        # Get stats
-        print("\n" + "=" * 50)
-        print("Memory Stats:")
-        stats = memory_manager.get_stats()
+            print(f"Enhanced Prompt Length: {len(enhanced_prompt)}")
+            print(f"Context Length: {len(context)}")
+            print(f"Full Prompt Length: {len(full_prompt)}")
+
+            # Show preview
+            print("Enhanced Prompt Preview:")
+            print(enhanced_prompt[:300] + "..." if len(enhanced_prompt) > 300 else enhanced_prompt)
+            print("-" * 80)
+
+        # Test auto-detection
+        print("\n=== AUTO ENHANCEMENT TEST ===")
+        auto_query = "How do I create a REST API in Python?"
+        full_prompt = memory_manager.get_enhanced_context(auto_query, ResponseStyle.AUTO)
+        print(f"Auto-detected enhancement for: {auto_query}")
+        print(f"Full prompt length: {len(full_prompt)}")
+
+        # Show stats
+        print("\n=== MEMORY STATISTICS ===")
+        stats = memory_manager.get_memory_stats()
         for key, value in stats.items():
             print(f"{key}: {value}")
 
-        print("\nOriginal MemoryManager test completed successfully!")
+        print("\nEnhanced Memory Manager test completed successfully!")
 
     except Exception as e:
         logger.error(f"Test failed: {e}")
