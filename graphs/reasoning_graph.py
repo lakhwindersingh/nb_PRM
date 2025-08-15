@@ -82,6 +82,7 @@ class InputState(BaseModel):
     enable_reflection: bool = Field(default=True, description="Enable reflection steps")
     enable_validation: bool = Field(default=True, description="Enable validation steps")
     custom_prompts: Optional[Dict[str, str]] = Field(default=None, description="Custom prompts for different steps")
+    error_count: int = Field(default=0, description="Number of errors encountered")
 
 
 class OutputState(BaseModel):
@@ -93,6 +94,7 @@ class OutputState(BaseModel):
     insights: List[str] = Field(description="Key insights discovered")
     confidence_score: float = Field(description="Final confidence score")
     metadata: Dict[str, Any] = Field(description="Additional metadata")
+    error_count: int = Field(default=0, description="Number of errors encountered")
 
 
 class EnhancedReasoningGraph:
@@ -205,6 +207,10 @@ class EnhancedReasoningGraph:
         return graph.compile()
 
     # Interface methods that delegate to the compiled graph
+    # graphs/reasoning_graph.py - Update the invoke method
+
+    # graphs/reasoning_graph.py - Fix the invoke method and state handling
+
     def invoke(self, input_data: Any, config: Optional[Dict] = None) -> ReasoningState:
         """
         Invoke the reasoning graph with input data
@@ -217,36 +223,75 @@ class EnhancedReasoningGraph:
             Final ReasoningState after processing
         """
         try:
+            # Set default config with recursion limit
+            if config is None:
+                config = {}
+
+            # Set a reasonable recursion limit
+            if 'recursion_limit' not in config:
+                config['recursion_limit'] = 15
+
             # Handle different input types for backward compatibility
             if isinstance(input_data, dict):
-                # Convert dict to InputState
                 if 'context' in input_data:
                     input_state = InputState(**input_data)
                 else:
-                    # Legacy format - assume it's a ReasoningState dict
-                    # Convert to InputState
                     input_state = InputState(
                         context=input_data.get('context', ''),
                         reasoning_mode=ReasoningMode(input_data.get('reasoning_mode', 'auto')),
-                        max_steps=input_data.get('max_steps', 10)
+                        max_steps=input_data.get('max_steps', 8)
                     )
             elif isinstance(input_data, ReasoningState):
-                # Convert ReasoningState to InputState for new interface
                 input_state = InputState(
                     context=input_data.context,
                     reasoning_mode=input_data.reasoning_mode,
-                    max_steps=input_data.max_steps
+                    max_steps=min(input_data.max_steps, 8)
                 )
             else:
-                # Assume it's already InputState
                 input_state = input_data
 
-            # Execute the graph
+            # Ensure max_steps is reasonable
+            if input_state.max_steps > 10:
+                input_state.max_steps = 10
+
+            # Execute the graph with config
             result = self.compiled_graph.invoke(input_state, config)
+
+            # Handle different result types
+            if isinstance(result, dict):
+                # Convert dict result to ReasoningState
+                reasoning_state = ReasoningState(
+                    context=result.get('context', 'No output generated'),
+                    original_query=result.get('original_query', input_state.context),
+                    loop=result.get('loop', False),
+                    step_count=result.get('step_count', 0),
+                    max_steps=result.get('max_steps', input_state.max_steps),
+                    reasoning_mode=ReasoningMode(result.get('reasoning_mode', 'auto')),
+                    steps_history=result.get('steps_history', []),
+                    accumulated_insights=result.get('accumulated_insights', []),
+                    confidence_scores=result.get('confidence_scores', []),
+                    energy_scores=result.get('energy_scores', []),
+                    start_time=result.get('start_time', datetime.now().isoformat()),
+                    total_tokens=result.get('total_tokens', 0),
+                    error_count=result.get('error_count', 0)
+                )
+                result = reasoning_state
+            elif not isinstance(result, ReasoningState):
+                # If result is not a ReasoningState, create one
+                reasoning_state = ReasoningState(
+                    context=str(result),
+                    original_query=input_state.context,
+                    loop=False,
+                    step_count=0,
+                    max_steps=input_state.max_steps,
+                    reasoning_mode=input_state.reasoning_mode,
+                    error_count=0
+                )
+                result = reasoning_state
 
             # Update execution stats
             self.execution_stats['total_executions'] += 1
-            if result.error_count == 0:
+            if hasattr(result, 'error_count') and result.error_count == 0:
                 self.execution_stats['successful_completions'] += 1
 
             return result
@@ -263,9 +308,12 @@ class EnhancedReasoningGraph:
             # Return error state
             error_state = ReasoningState(
                 context=f"Error during reasoning: {str(e)}",
-                original_query=getattr(input_data, 'context', str(input_data)),
+                original_query=getattr(input_data, 'context', str(input_data)[:100]),
                 loop=False,
-                error_count=1
+                error_count=1,
+                step_count=0,
+                max_steps=getattr(input_data, 'max_steps', 10),
+                reasoning_mode=ReasoningMode.AUTO
             )
             return error_state
 
@@ -350,7 +398,8 @@ class EnhancedReasoningGraph:
                 metadata={'error': str(e)}
             )
 
-    # All the node methods remain the same...
+    # graphs/reasoning_graph.py - Fix all node methods to properly handle state
+
     def _start_node(self, state: InputState) -> ReasoningState:
         """Initialize reasoning state from input"""
         try:
@@ -370,16 +419,33 @@ class EnhancedReasoningGraph:
                 reasoning_mode=reasoning_mode,
                 max_steps=state.max_steps,
                 step_count=0,
-                loop=True
+                loop=True,
+                steps_history=[],
+                accumulated_insights=[],
+                confidence_scores=[],
+                energy_scores=[],
+                start_time=datetime.now().isoformat(),
+                total_tokens=0,
+                error_count=0
             )
 
         except Exception as e:
             logger.error(f"Error in start node: {e}")
-            # Return minimal state to continue
+            # Return minimal error state
             return ReasoningState(
-                context=state.context,
-                original_query=state.context,
-                error_count=1
+                context=getattr(state, 'context', 'Error in initialization'),
+                original_query=getattr(state, 'context', 'Unknown'),
+                loop=False,
+                step_count=0,
+                max_steps=getattr(state, 'max_steps', 10),
+                reasoning_mode=ReasoningMode.AUTO,
+                error_count=1,
+                steps_history=[],
+                accumulated_insights=[],
+                confidence_scores=[],
+                energy_scores=[],
+                start_time=datetime.now().isoformat(),
+                total_tokens=0
             )
 
     def _reasoning_node(self, state: ReasoningState) -> ReasoningState:
@@ -387,15 +453,29 @@ class EnhancedReasoningGraph:
         start_time = datetime.now()
 
         try:
+            # Ensure we have a proper ReasoningState
+            if not isinstance(state, ReasoningState):
+                logger.error(f"Expected ReasoningState, got {type(state)}")
+                return ReasoningState(
+                    context="Invalid state type in reasoning node",
+                    original_query="Unknown",
+                    loop=False,
+                    error_count=1
+                )
+
             # Get enhanced context based on reasoning mode
             enhanced_prompt = self._get_enhanced_reasoning_prompt(state)
 
             # Get augmented context from memory
-            retrieved_context = self.memory_manager.get_augmented_context(
-                state.original_query,
-                k=6,  # Get more context for reasoning
-                context_length_limit=3000
-            )
+            try:
+                retrieved_context = self.memory_manager.get_augmented_context(
+                    state.original_query,
+                    k=6,
+                    context_length_limit=3000
+                )
+            except Exception as e:
+                logger.warning(f"Memory retrieval failed: {e}")
+                retrieved_context = "Context retrieval failed."
 
             # Combine enhanced prompt with retrieved context
             full_context = f"{enhanced_prompt}\n\nRelevant Context:\n{retrieved_context}"
@@ -411,7 +491,7 @@ class EnhancedReasoningGraph:
             step = ReasoningStep(
                 step_number=state.step_count + 1,
                 step_type=StepType.REASONING,
-                input_context=state.context[:500],  # Truncate for storage
+                input_context=state.context[:500],
                 output=output,
                 reasoning_mode=state.reasoning_mode,
                 energy_score=energy_score,
@@ -419,24 +499,37 @@ class EnhancedReasoningGraph:
                 duration_ms=duration
             )
 
-            # Update state
-            new_state = state.copy()
-            new_state.context = output
-            new_state.step_count += 1
-            new_state.steps_history.append(step.__dict__)
-            new_state.energy_scores.append(energy_score)
+            # Create new state (don't modify the original)
+            new_state = ReasoningState(
+                context=output,
+                original_query=state.original_query,
+                loop=state.loop,
+                step_count=state.step_count + 1,
+                max_steps=state.max_steps,
+                reasoning_mode=state.reasoning_mode,
+                steps_history=state.steps_history + [step.__dict__],
+                accumulated_insights=state.accumulated_insights.copy(),
+                confidence_scores=state.confidence_scores.copy(),
+                energy_scores=state.energy_scores + [energy_score],
+                start_time=state.start_time,
+                total_tokens=state.total_tokens,
+                error_count=state.error_count
+            )
 
             # Log step
             if self.reasoning_logger:
                 self.reasoning_logger.log_step(state.context, output)
 
             # Save to memory
-            self.memory_manager.save_interaction(state.context, output, {
-                'step_type': 'reasoning',
-                'step_number': new_state.step_count,
-                'reasoning_mode': state.reasoning_mode.value,
-                'energy_score': energy_score
-            })
+            try:
+                self.memory_manager.save_interaction(state.context, output, {
+                    'step_type': 'reasoning',
+                    'step_number': new_state.step_count,
+                    'reasoning_mode': state.reasoning_mode.value,
+                    'energy_score': energy_score
+                })
+            except Exception as e:
+                logger.warning(f"Failed to save interaction: {e}")
 
             # Extract insights
             insights = self._extract_insights(output)
@@ -446,10 +539,93 @@ class EnhancedReasoningGraph:
 
         except Exception as e:
             logger.error(f"Error in reasoning node: {e}")
-            new_state = state.copy()
-            new_state.error_count += 1
-            new_state.loop = False  # Stop on error
-            return new_state
+            # Create error state
+            return ReasoningState(
+                context=f"Error in reasoning: {str(e)}",
+                original_query=getattr(state, 'original_query', 'Unknown'),
+                loop=False,
+                step_count=getattr(state, 'step_count', 0),
+                max_steps=getattr(state, 'max_steps', 10),
+                reasoning_mode=getattr(state, 'reasoning_mode', ReasoningMode.AUTO),
+                steps_history=getattr(state, 'steps_history', []),
+                accumulated_insights=getattr(state, 'accumulated_insights', []),
+                confidence_scores=getattr(state, 'confidence_scores', []),
+                energy_scores=getattr(state, 'energy_scores', []),
+                start_time=getattr(state, 'start_time', datetime.now().isoformat()),
+                total_tokens=getattr(state, 'total_tokens', 0),
+                error_count=getattr(state, 'error_count', 0) + 1
+            )
+
+    def _finalize_node(self, state: ReasoningState) -> ReasoningState:
+        """Finalize reasoning and prepare output"""
+        try:
+            # Ensure we have a proper ReasoningState
+            if not isinstance(state, ReasoningState):
+                logger.error(f"Expected ReasoningState in finalize, got {type(state)}")
+                return ReasoningState(
+                    context="Invalid state in finalize node",
+                    original_query="Unknown",
+                    loop=False,
+                    error_count=1
+                )
+
+            # Update execution stats
+            if hasattr(self, 'execution_stats'):
+                self.execution_stats['total_executions'] = self.execution_stats.get('total_executions', 0) + 1
+
+                if state.error_count == 0:
+                    self.execution_stats['successful_completions'] = self.execution_stats.get('successful_completions',
+                                                                                              0) + 1
+
+                # Update average steps
+                total_steps = len(state.steps_history)
+                current_avg = self.execution_stats.get('average_steps', 0.0)
+                total_executions = self.execution_stats['total_executions']
+                if total_executions > 0:
+                    self.execution_stats['average_steps'] = (current_avg * (
+                                total_executions - 1) + total_steps) / total_executions
+
+            # Calculate final confidence score
+            final_confidence = 0.5
+            if state.energy_scores:
+                final_confidence = sum(state.energy_scores[-3:]) / min(3, len(state.energy_scores))
+
+            # Create final state
+            final_state = ReasoningState(
+                context=state.context,
+                original_query=state.original_query,
+                loop=False,  # Always stop after finalization
+                step_count=state.step_count,
+                max_steps=state.max_steps,
+                reasoning_mode=state.reasoning_mode,
+                steps_history=state.steps_history,
+                accumulated_insights=state.accumulated_insights,
+                confidence_scores=state.confidence_scores + [final_confidence],
+                energy_scores=state.energy_scores,
+                start_time=state.start_time,
+                total_tokens=state.total_tokens,
+                error_count=state.error_count
+            )
+
+            return final_state
+
+        except Exception as e:
+            logger.error(f"Error in finalize node: {e}")
+            return ReasoningState(
+                context=getattr(state, 'context', f"Finalization error: {str(e)}"),
+                original_query=getattr(state, 'original_query', 'Unknown'),
+                loop=False,
+                step_count=getattr(state, 'step_count', 0),
+                max_steps=getattr(state, 'max_steps', 10),
+                reasoning_mode=getattr(state, 'reasoning_mode', ReasoningMode.AUTO),
+                steps_history=getattr(state, 'steps_history', []),
+                accumulated_insights=getattr(state, 'accumulated_insights', []),
+                confidence_scores=getattr(state, 'confidence_scores', []),
+                energy_scores=getattr(state, 'energy_scores', []),
+                start_time=getattr(state, 'start_time', datetime.now().isoformat()),
+                total_tokens=getattr(state, 'total_tokens', 0),
+                error_count=getattr(state, 'error_count', 0) + 1
+            )
 
     # Include all the other node methods (_reflection_node, _validation_node, etc.)
     # and helper methods from the previous implementation...
@@ -548,74 +724,86 @@ class EnhancedReasoningGraph:
             logger.error(f"Error in synthesis node: {e}")
             return state
 
-    def _finalize_node(self, state: ReasoningState) -> ReasoningState:
-        """Finalize reasoning and prepare output"""
-        try:
-            # Update execution stats
-            self.execution_stats['total_executions'] += 1
-
-            if state.error_count == 0:
-                self.execution_stats['successful_completions'] += 1
-
-            # Update average steps
-            total_steps = len(state.steps_history)
-            current_avg = self.execution_stats['average_steps']
-            total_executions = self.execution_stats['total_executions']
-            self.execution_stats['average_steps'] = (
-                    (current_avg * (total_executions - 1) + total_steps) / total_executions
-            )
-
-            # Final state updates
-            new_state = state.copy()
-            new_state.loop = False
-
-            # Calculate final confidence score
-            if state.energy_scores:
-                new_state.confidence_scores = state.energy_scores
-                final_confidence = sum(state.energy_scores[-3:]) / min(3, len(state.energy_scores))
-            else:
-                final_confidence = 0.5
-
-            new_state.confidence_scores.append(final_confidence)
-
-            return new_state
-
-        except Exception as e:
-            logger.error(f"Error in finalize node: {e}")
-            new_state = state.copy()
-            new_state.loop = False
-            return new_state
-
     # Decision methods
+    # graphs/reasoning_graph.py - Update the decision methods to prevent infinite loops
+
     def _should_continue_reasoning(self, state: ReasoningState) -> str:
         """Decide whether to continue reasoning or move to next phase"""
         try:
-            # Check max steps
+            # Check max steps first
             if state.step_count >= state.max_steps:
                 self.execution_stats['max_step_halts'] += 1
                 return "end"
 
-            # Check energy/quality
-            if state.energy_scores and not self.energy_monitor.should_continue(state.context):
-                self.execution_stats['energy_halts'] += 1
-                if self.enable_synthesis and state.step_count > 2:
+            # Check energy/quality - be more strict to avoid infinite loops
+            if state.energy_scores:
+                if not self.energy_monitor.should_continue(state.context):
+                    self.execution_stats['energy_halts'] += 1
+                    if self.enable_synthesis and state.step_count > 2:
+                        return "synthesize"
+                    return "end"
+
+                # Additional check: if last few steps have low energy, stop
+                if len(state.energy_scores) >= 3:
+                    recent_avg = sum(state.energy_scores[-3:]) / 3
+                    if recent_avg < 0.5:  # Low quality threshold
+                        return "end"
+
+            # Limit reasoning loops - after 5 steps, start moving to other phases
+            if state.step_count >= 5:
+                if self.enable_synthesis:
                     return "synthesize"
                 return "end"
 
-            # Check if we should reflect (every 3-4 steps)
-            if self.enable_reflection and state.step_count > 0 and state.step_count % 3 == 0:
-                return "reflect"
+            # More conservative reflection/validation triggers
+            if state.step_count >= 3:
+                if self.enable_reflection and state.step_count % 4 == 0:  # Less frequent
+                    return "reflect"
+                if self.enable_validation and state.step_count % 3 == 0:  # Less frequent
+                    return "validate"
 
-            # Check if we should validate (every 2-3 steps)
-            if self.enable_validation and state.step_count > 1 and state.step_count % 2 == 0:
-                return "validate"
+            # Continue reasoning only for first few steps
+            if state.step_count < 3:
+                return "continue"
 
-            # Continue reasoning
-            return "continue"
+            # Default to ending after reasonable steps
+            return "end"
 
         except Exception as e:
             logger.error(f"Error in continue decision: {e}")
             return "end"
+
+    def _after_reflection_decision(self, state: ReasoningState) -> str:
+        """Decide what to do after reflection - be more decisive"""
+        if state.step_count >= state.max_steps - 1:  # Leave room for finalization
+            return "end"
+
+        # After reflection, prefer to synthesize or end rather than continue indefinitely
+        if state.step_count >= 4:
+            if self.enable_synthesis:
+                return "synthesize"
+            return "end"
+
+        # Only continue for one more step after reflection
+        return "continue"
+
+    def _after_validation_decision(self, state: ReasoningState) -> str:
+        """Decide what to do after validation - be more decisive"""
+        if state.step_count >= state.max_steps - 1:  # Leave room for finalization
+            return "end"
+
+        # After validation, prefer to synthesize or end
+        if state.step_count >= 3:
+            if self.enable_synthesis:
+                return "synthesize"
+            return "end"
+
+        # Only continue for one more step after validation
+        return "continue"
+
+    def _after_synthesis_decision(self, state: ReasoningState) -> str:
+        """Decide what to do after synthesis - always end"""
+        return "end"
 
     def _after_reflection_decision(self, state: ReasoningState) -> str:
         """Decide what to do after reflection"""
